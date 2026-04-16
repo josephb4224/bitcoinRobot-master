@@ -142,6 +142,7 @@ def cmd_portfolio(args: argparse.Namespace, cfg: dict) -> None:
         print(
             f"{rec['symbol']:<8} {rec['signal']:<5} {rec['current_qty']:>8.0f} {rec['target_qty']:>8.0f} {rec['action']:>6} {rec['price']:>10.2f}"
         )
+        
 
 
 def cmd_paper_trade(args: argparse.Namespace, cfg: dict) -> None:
@@ -249,3 +250,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    
