@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from backtest import run_backtest
+from broker import PaperBroker
 from data_provider import fetch_ohlcv
 from indicators import enrich
+from portfolio import build_recommendations, execute_recommendations
 from strategy import score_row, signals_from_df
 
 
@@ -22,6 +25,7 @@ def load_config(path: Path | None) -> dict:
         "watchlist": ["SPY", "QQQ", "AAPL"],
         "strategy": {},
         "backtest": {},
+        "portfolio": {},
     }
     if path and path.is_file():
         with open(path, encoding="utf-8") as f:
@@ -33,7 +37,11 @@ def load_config(path: Path | None) -> dict:
 
 
 def cmd_backtest(args: argparse.Namespace, cfg: dict) -> None:
-    df = fetch_ohlcv(args.symbol, period=args.period, interval=args.interval)
+    try:
+        df = fetch_ohlcv(args.symbol, period=args.period, interval=args.interval)
+    except Exception as exc:
+        print(f"Error fetching data for {args.symbol}: {exc}")
+        sys.exit(1)
     bt_cfg = cfg.get("backtest", {})
     res = run_backtest(
         df,
@@ -41,6 +49,7 @@ def cmd_backtest(args: argparse.Namespace, cfg: dict) -> None:
         initial_cash=float(bt_cfg.get("initial_cash", 100_000)),
         commission_pct=float(bt_cfg.get("commission_pct", 0.0005)),
         slippage_pct=float(bt_cfg.get("slippage_pct", 0.0002)),
+        allocation_pct=float(bt_cfg.get("allocation_pct", 1.0)),
     )
     print(f"Symbol: {args.symbol}")
     print(f"Period: {args.period}  Interval: {args.interval}")
@@ -51,7 +60,11 @@ def cmd_backtest(args: argparse.Namespace, cfg: dict) -> None:
 
 
 def cmd_signal(args: argparse.Namespace, cfg: dict) -> None:
-    df = fetch_ohlcv(args.symbol, period=args.period, interval=args.interval)
+    try:
+        df = fetch_ohlcv(args.symbol, period=args.period, interval=args.interval)
+    except Exception as exc:
+        print(f"Error fetching data for {args.symbol}: {exc}")
+        sys.exit(1)
     data = enrich(df, cfg["strategy"])
     last = data.iloc[-1]
     b, s, detail = score_row(last, cfg["strategy"])
@@ -111,8 +124,58 @@ def cmd_scan(args: argparse.Namespace, cfg: dict) -> None:
             print(f"{sym:<8} {act:<6} {b:>4} {s:>4} {cl:>12.2f}")
 
 
+def cmd_portfolio(args: argparse.Namespace, cfg: dict) -> None:
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    if not symbols:
+        symbols = cfg.get("watchlist", [])
+    broker = PaperBroker(Path(args.portfolio_file or "portfolio_state.json"))
+    try:
+        recommendations = build_recommendations(symbols, cfg, broker, args.period, args.interval)
+    except Exception as exc:
+        print(f"Error generating portfolio recommendations: {exc}")
+        sys.exit(1)
+
+    print(f"Portfolio recommendations for {len(symbols)} symbols")
+    print(f"Cash available: ${broker.get_cash():,.2f}")
+    print(f"{'Symbol':<8} {'Signal':<5} {'Current':>8} {'Target':>8} {'Action':>6} {'Price':>10}")
+    for rec in recommendations:
+        print(
+            f"{rec['symbol']:<8} {rec['signal']:<5} {rec['current_qty']:>8.0f} {rec['target_qty']:>8.0f} {rec['action']:>6} {rec['price']:>10.2f}"
+        )
+
+
+def cmd_paper_trade(args: argparse.Namespace, cfg: dict) -> None:
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    if not symbols:
+        symbols = cfg.get("watchlist", [])
+    broker = PaperBroker(Path(args.portfolio_file or "portfolio_state.json"))
+    try:
+        recommendations = build_recommendations(symbols, cfg, broker, args.period, args.interval)
+    except Exception as exc:
+        print(f"Error generating trade recommendations: {exc}")
+        sys.exit(1)
+
+    executed = []
+    for rec in recommendations:
+        if rec["action"] in {"BUY", "SELL"} and rec["order_qty"] > 0:
+            try:
+                executed.append(execute_recommendations(broker, [rec])[0])
+            except Exception as exc:
+                print(f"Failed to execute {rec['action']} {rec['symbol']}: {exc}")
+
+    print(f"Executed {len(executed)} paper trades. New cash: ${broker.get_cash():,.2f}")
+    for item in executed:
+        print(
+            f"{item['symbol']}: {item['action']} {item['quantity']} @ {item['price']:.2f}"
+        )
+
+
 def cmd_dump(args: argparse.Namespace, cfg: dict) -> None:
-    df = fetch_ohlcv(args.symbol, period=args.period, interval=args.interval)
+    try:
+        df = fetch_ohlcv(args.symbol, period=args.period, interval=args.interval)
+    except Exception as exc:
+        print(f"Error fetching data for {args.symbol}: {exc}")
+        sys.exit(1)
     data = enrich(df, cfg["strategy"])
     sig = signals_from_df(data, cfg["strategy"])
     out = data.join(sig[["buy_score", "sell_score", "signal"]], how="inner")
@@ -154,6 +217,22 @@ def main() -> None:
     p_sc.add_argument("--symbols", default="", help="e.g. SPY,QQQ,AAPL (else use config watchlist)")
     p_sc.add_argument("--period", default="6mo")
     p_sc.set_defaults(func=cmd_scan)
+
+    p_pf = sub.add_parser("portfolio", help="Generate portfolio position recommendations")
+    _add_config_arg(p_pf)
+    p_pf.add_argument("--symbols", default="", help="e.g. SPY,QQQ,AAPL (else use config watchlist)")
+    p_pf.add_argument("--period", default="6mo")
+    p_pf.add_argument("--interval", default="1d")
+    p_pf.add_argument("--portfolio-file", default="portfolio_state.json", help="Path to paper portfolio state file")
+    p_pf.set_defaults(func=cmd_portfolio)
+
+    p_pt = sub.add_parser("paper-trade", help="Execute paper trades against a local portfolio state")
+    _add_config_arg(p_pt)
+    p_pt.add_argument("--symbols", default="", help="e.g. SPY,QQQ,AAPL (else use config watchlist)")
+    p_pt.add_argument("--period", default="6mo")
+    p_pt.add_argument("--interval", default="1d")
+    p_pt.add_argument("--portfolio-file", default="portfolio_state.json", help="Path to paper portfolio state file")
+    p_pt.set_defaults(func=cmd_paper_trade)
 
     p_d = sub.add_parser("dump", help="Print recent rows with scores (debug)")
     _add_config_arg(p_d)

@@ -33,7 +33,7 @@ Huobi credentials and `config` layout are expected by `sdk/hbsdk.js` (see `confi
 
 ## 2. Addition: Stock market bot (Python)
 
-**Purpose:** **Research only** — download historical **stocks/ETFs** via Yahoo (`yfinance`), compute indicators, output **BUY / SELL / HOLD-style signals** and a simple **long-only backtest**. **No broker connection** and **no order placement**.
+**Purpose:** **Research only** — download historical **stocks/ETFs** via Yahoo (`yfinance`), compute indicators, output **BUY / SELL / HOLD-style signals**, long-only backtests, portfolio recommendations, and paper-trade simulations. **No broker connection** and **no order placement**.
 
 **Details, commands, and examples:** [stock_market_bot/README.md](stock_market_bot/README.md)
 
@@ -46,6 +46,8 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 python run.py signal --symbol SPY --period 1y
 ```
+
+**Commands overview:** `signal`, `scan`, `backtest`, `portfolio`, `paper-trade`, `dump`.
 
 **Maintainer note:** Python addition by josephb4224 (April 2026).
 

@@ -68,8 +68,9 @@ flowchart LR
 Copy `config.example.json` to e.g. `my_config.json` and edit:
 
 - `watchlist` — tickers for `scan` when you do not pass `--symbols`.
-- `strategy` — EMA lengths, RSI thresholds, `buy_score_min` / `sell_score_min`, optional `"max_atr_pct"` (e.g. `0.03` to dampen buys in very high ATR%).
-- `backtest` — `initial_cash`, `commission_pct`, `slippage_pct`.
+- `strategy` — EMA lengths, RSI thresholds, `buy_score_min` / `sell_score_min`, optional `"max_atr_pct"` (e.g. `0.03` to dampen buys in very high ATR%), plus `rsi_period` and `atr_period` for indicator timing.
+- `backtest` — `initial_cash`, `commission_pct`, `slippage_pct`, and `allocation_pct` to control how much cash is invested when the strategy issues a BUY signal.
+- `portfolio` — `target_exposure_pct`, `max_position_pct`, and `cash_buffer_pct` for portfolio-level sizing and risk management.
 
 Pass a file with `-c` on the subcommand (required placement for argparse):
 
@@ -92,6 +93,8 @@ Run from the `stock_market_bot` folder (venv activated).
 | `python run.py scan --symbols SPY,QQQ,AAPL --period 6mo` | Screen those tickers; sorted by bullish vs bearish score spread. |
 | `python run.py scan -c my_config.json --period 6mo` | Scan `watchlist` from config. |
 | `python run.py backtest --symbol SPY --period 2y` | Long-only simulation using config fees/slippage. |
+| `python run.py portfolio -c my_config.json --symbols SPY,QQQ,AAPL --period 6mo` | Recommended portfolio allocations based on current signals. |
+| `python run.py paper-trade -c my_config.json --symbols SPY,QQQ,AAPL --period 6mo` | Execute paper trades against a local portfolio state file. |
 | `python run.py dump --symbol AAPL --last 20` | Recent rows: price, indicators, scores, signal (debug / context). |
 
 Optional: `--interval` on `signal`, `backtest`, and `dump` (e.g. `1d`; intraday availability from Yahoo varies).
@@ -101,8 +104,18 @@ Optional: `--interval` on `signal`, `backtest`, and `dump` (e.g. `1d`; intraday 
 ## Limitations
 
 - **Not financial advice.** Yahoo data may differ from your broker (splits, adjustments, delays).
-- **No execution layer** — by design.
+- **No execution layer** — by design, although the bot now includes paper-trade scaffolding for local testing.
 - **Backtests** are simplified (e.g. long-only, all-in sizing); they are for learning and rough comparison, not a promise of live performance.
+
+## Best setup for stronger results
+
+A good trading bot is not just a signal engine; it should combine research, risk management, and execution planning.
+
+- Use `scan` to surface candidates, then `signal` + `dump` for recent context.
+- Use `portfolio` to convert signals into position recommendations and avoid overexposure.
+- Use `paper-trade` before any live trading to validate rules and simulate execution.
+- Maintain a watchlist, and keep position sizing disciplined with `target_exposure_pct`, `max_position_pct`, and `cash_buffer_pct`.
+- Backtest before changing rules, and prefer simpler, robust strategies over overfitted rule sets.
 
 ---
 

@@ -14,10 +14,13 @@ def run_backtest(
     initial_cash: float = 100_000.0,
     commission_pct: float = 0.0005,
     slippage_pct: float = 0.0002,
+    allocation_pct: float = 1.0,
 ) -> dict:
     data = enrich(df, strategy_cfg)
     sig = signals_from_df(data, strategy_cfg)
     merged = data.join(sig[["signal"]], how="inner")
+
+    allocation_pct = max(0.0, min(float(allocation_pct), 1.0))
 
     cash = initial_cash
     shares = 0.0
@@ -29,12 +32,13 @@ def run_backtest(
         signal = row["signal"]
 
         if signal == "BUY" and shares == 0 and cash > 0:
+            spend = cash * allocation_pct
             exec_price = price * (1 + slippage_pct)
-            shares = (cash * (1 - commission_pct)) / exec_price
-            cash = 0.0
+            shares = (spend * (1 - commission_pct)) / exec_price
+            cash -= spend
         elif signal == "SELL" and shares > 0:
             exec_price = price * (1 - slippage_pct)
-            cash = shares * exec_price * (1 - commission_pct)
+            cash = shares * exec_price * (1 - commission_pct) + cash
             shares = 0.0
 
         equity = cash + shares * price

@@ -37,16 +37,18 @@ def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
 def enrich(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     out = df.copy()
     c = out["close"]
-    fast = int(cfg.get("fast_ema", 12))
-    slow = int(cfg.get("slow_ema", 26))
-    trend = int(cfg.get("trend_ema", 50))
-    vol_ma = int(cfg.get("volume_ma", 20))
+    fast = max(1, int(cfg.get("fast_ema", 12)))
+    slow = max(1, int(cfg.get("slow_ema", 26)))
+    trend = max(1, int(cfg.get("trend_ema", 50)))
+    vol_ma = max(1, int(cfg.get("volume_ma", 20)))
+    atr_period = max(1, int(cfg.get("atr_period", 14)))
+    rsi_period = max(1, int(cfg.get("rsi_period", 14)))
 
     out["ema_fast"] = ema(c, fast)
     out["ema_slow"] = ema(c, slow)
     out["ema_trend"] = ema(c, trend)
-    out["rsi"] = rsi(c, int(cfg.get("rsi_period", 14)))
+    out["rsi"] = rsi(c, rsi_period)
     out["vol_ma"] = out["volume"].rolling(vol_ma).mean()
-    out["atr"] = atr(out, 14)
-    out["atr_pct"] = out["atr"] / c
+    out["atr"] = atr(out, atr_period)
+    out["atr_pct"] = out["atr"] / c.replace(0, pd.NA)
     return out
